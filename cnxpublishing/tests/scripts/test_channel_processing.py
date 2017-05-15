@@ -5,20 +5,20 @@
 # Public License version 3 (AGPLv3).
 # See LICENCE.txt for details.
 # ###
+import io
+import unittest
 from copy import deepcopy
 from contextlib import contextmanager
-import io
 from multiprocessing import Process
-import unittest
 try:
     from unittest import mock
 except ImportError:
     import mock
 
-from cnxarchive.database import get_collated_content
-from cnxdb.init import init_db
 import cnxepub
 import psycopg2
+from cnxarchive.database import get_collated_content
+from cnxdb.init import init_db
 
 from .. import testing, use_cases
 
@@ -30,8 +30,8 @@ def check_module_state(module_ident):
             while True:
                 cursor.execute("""\
 SELECT module_ident, stateid FROM modules
-    WHERE portal_type = 'Collection'
-    ORDER BY module_ident DESC LIMIT 1""")
+WHERE portal_type = 'Collection'
+ORDER BY module_ident DESC LIMIT 1""")
                 module_ident, stateid = cursor.fetchone()
 
                 if stateid in (1, 7):
@@ -46,7 +46,7 @@ def wait_for_module_state(module_ident, timeout=10):
         p.terminate()
 
 
-class PostPublicationTestCase(unittest.TestCase):
+class ChannelProcessingTestCase(unittest.TestCase):
     @testing.db_connect
     def setUp(self, cursor):
         settings = testing.integration_test_settings()
@@ -58,7 +58,7 @@ class PostPublicationTestCase(unittest.TestCase):
 
     def tearDown(self):
         # Terminate the post publication worker script.
-        if self.process.is_alive():
+        if hasattr(self, 'process') and self.process.is_alive():
             self.process.terminate()
 
         with psycopg2.connect(self.db_conn_str) as db_conn:
@@ -67,12 +67,12 @@ class PostPublicationTestCase(unittest.TestCase):
                 cursor.execute("CREATE SCHEMA public")
 
     def target(self, args=(testing.config_uri(),)):
-        from ...scripts.post_publication import main
+        from ...scripts.channel_processing import main
 
         # Start the post publication worker script.
         # (The post publication worker is in an infinite loop, this is a way to
         # test it)
-        args = ('cnx-publishing-post-publication',) + args
+        args = ('cnx-publishing-channel-processing',) + args
         self.process = Process(target=main, args=(args,))
         self.process.start()
 
@@ -108,7 +108,7 @@ SELECT nodeid, is_collated FROM trees WHERE documentid = %s
 
         cursor.execute("""\
 SELECT state FROM post_publications
-    WHERE module_ident = %s ORDER BY timestamp DESC""", (module_ident,))
+WHERE module_ident = %s ORDER BY timestamp DESC""", (module_ident,))
         self.assertEqual('Done/Success', cursor.fetchone()[0])
 
     @testing.db_connect
@@ -234,15 +234,15 @@ nav#toc:pass(30)::after {
 
         cursor.execute("""\
 SELECT module_ident FROM modules
-    WHERE portal_type = 'Collection'
-    ORDER BY module_ident DESC LIMIT 1""")
+WHERE portal_type = 'Collection'
+ORDER BY module_ident DESC LIMIT 1""")
         module_ident = cursor.fetchone()[0]
 
         wait_for_module_state(module_ident)
 
         cursor.execute("""\
 SELECT nodeid, is_collated FROM trees WHERE documentid = %s
-    ORDER BY nodeid""", (module_ident,))
+ORDER BY nodeid""", (module_ident,))
         is_collated = [i[1] for i in cursor.fetchall()]
         self.assertEqual([False, True], is_collated)
 
@@ -252,17 +252,17 @@ SELECT nodeid, is_collated FROM trees WHERE documentid = %s
 
         cursor.execute("""\
 SELECT state FROM post_publications
-    WHERE module_ident = %s ORDER BY timestamp DESC""", (module_ident,))
+WHERE module_ident = %s ORDER BY timestamp DESC""", (module_ident,))
         self.assertEqual('Done/Success', cursor.fetchone()[0])
 
     @testing.db_connect
-    @mock.patch('cnxpublishing.scripts.post_publication.remove_baked')
+    @mock.patch('cnxpublishing.subscribers.remove_baked')
     def test_error_handling(self, cursor, mock_remove_collation):
-        from ...scripts import post_publication
+        from ...scripts import channel_processing
         from ...bake import remove_baked
 
-        # Fake remove_collation, the first time it's called, it will raise an
-        # exception, after that it'll call the normal remove_collation function
+        # Fake remove_baked, the first time it's called, it will raise an
+        # exception, after that it'll call the normal remove_baked function
         class FakeRemoveCollation(object):
             # this is necessary inside a class because just a variable "count"
             # cannot be accessed inside fake_remove_collation
@@ -284,8 +284,8 @@ SELECT state FROM post_publications
 
         cursor.execute("""\
 SELECT module_ident FROM modules
-    WHERE portal_type = 'Collection'
-    ORDER BY module_ident DESC LIMIT 2""")
+WHERE portal_type = 'Collection'
+ORDER BY module_ident DESC LIMIT 2""")
 
         ((module_ident1,), (module_ident2,)) = cursor.fetchall()
 
@@ -294,14 +294,14 @@ SELECT module_ident FROM modules
 
         cursor.execute("""\
 SELECT stateid FROM modules
-    WHERE module_ident IN %s""", ((module_ident1, module_ident2),))
+WHERE module_ident IN %s""", ((module_ident1, module_ident2),))
 
         # make sure one is marked as "errored" and the other one "current"
         self.assertEqual([(1,), (7,)], sorted(cursor.fetchall()))
 
         cursor.execute("""\
 SELECT state FROM post_publications
-    WHERE module_ident IN %s""", ((module_ident1, module_ident2),))
+WHERE module_ident IN %s""", ((module_ident1, module_ident2),))
         self.assertEqual(
             ['Done/Success', 'Failed/Error', 'Processing', 'Processing'],
             sorted([i[0] for i in cursor.fetchall()]))

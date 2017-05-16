@@ -6,6 +6,8 @@
 # See LICENCE.txt for details.
 # ###
 import io
+import json
+import time
 import unittest
 from copy import deepcopy
 from contextlib import contextmanager
@@ -19,12 +21,21 @@ import cnxepub
 import psycopg2
 from cnxarchive.database import get_collated_content
 from cnxdb.init import init_db
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+from pyramid import testing
+from pyramid.paster import bootstrap
 
-from .. import testing, use_cases
+from .. import use_cases
+from ..testing import (
+    config_uri,
+    db_connect,
+    db_connection_factory,
+    integration_test_settings,
+)
 
 
 def check_module_state(module_ident):
-    connect = testing.db_connection_factory()
+    connect = db_connection_factory()
     with connect() as db_conn:
         with db_conn.cursor() as cursor:
             while True:
@@ -46,10 +57,94 @@ def wait_for_module_state(module_ident, timeout=10):
         p.terminate()
 
 
+@db_connect
+def subscriber(event, cursor):
+    data = json.dumps({'channel': event.channel,
+                       'payload': event.payload})
+    cursor.execute('INSERT INTO faux_channel_received (data) values (%s)',
+                   (data,))
+
+
 class ChannelProcessingTestCase(unittest.TestCase):
-    @testing.db_connect
+
+    settings = None
+    db_conn_str = None
+
+    @classmethod
+    def setUpClass(cls):
+        cls.settings = integration_test_settings()
+        from cnxpublishing.config import CONNECTION_STRING
+        cls.db_conn_str = cls.settings[CONNECTION_STRING]
+
+    @db_connect
     def setUp(self, cursor):
-        settings = testing.integration_test_settings()
+        self.config = testing.setUp(settings=self.settings)
+
+        cursor.execute('CREATE TABLE IF NOT EXISTS "faux_channel_received" '
+                       '("id" SERIAL PRIMARY KEY, "data" JSON)')
+        
+
+    def tearDown(self):
+        # Terminate the post publication worker script.
+        if hasattr(self, 'process') and self.process.is_alive():
+            self.process.terminate()
+        testing.tearDown()
+
+    @classmethod
+    def tearDownClass(cls):
+        with psycopg2.connect(cls.db_conn_str) as db_conn:
+            with db_conn.cursor() as cursor:
+                cursor.execute("DROP SCHEMA public CASCADE")
+                cursor.execute("CREATE SCHEMA public")
+
+    @db_connect
+    def make_one(self, cursor, channel, payload):
+        """Create a Postgres notification"""
+        pl = json.dumps(payload)
+        cursor.execute("select pg_notify(%s, %s);", (channel, pl,))
+        cursor.connection.commit()
+
+    @mock.patch('cnxpublishing.scripts.channel_processing.bootstrap')
+    def target(self, mocked_bootstrap):
+
+        def wrapped_bootstrap(config_uri, request=None, options=None):
+            bootstrap_info = bootstrap(config_uri, request, options)
+            registry = bootstrap_info['registry']
+            # Register the test subscriber
+            from cnxpublishing.events import PGNotifyEvent
+            registry.registerHandler(subscriber, (PGNotifyEvent,))
+            return bootstrap_info
+
+        mocked_bootstrap.side_effect = wrapped_bootstrap
+
+        from cnxpublishing.scripts.channel_processing import main
+        # Start the post publication worker script.
+        # (The post publication worker is in an infinite loop, this is a way to
+        # test it)
+        args = ('cnx-publishing-channel-processing', config_uri(),)
+        self.process = Process(target=main, args=(args,))
+        self.process.start()
+
+    @db_connect
+    def test(self, cursor):
+        self.target()
+        # Wait for the process to fully start.
+        time.sleep(1)
+
+        payload = {'a': 25, 'b': 24, 'c': 23}
+        self.make_one('faux_channel', payload)
+        # Wait for the process to process.
+        time.sleep(1)
+
+        cursor.execute('SELECT data FROM faux_channel_received')
+        data = cursor.fetchone()[0]
+        assert data['payload'] == payload
+
+
+class DeprecatedChannelProcessingTestCase(unittest.TestCase):
+    @db_connect
+    def setUp(self, cursor):
+        settings = integration_test_settings()
         from ...config import CONNECTION_STRING
         self.db_conn_str = settings[CONNECTION_STRING]
 
@@ -66,7 +161,7 @@ class ChannelProcessingTestCase(unittest.TestCase):
                 cursor.execute("DROP SCHEMA public CASCADE")
                 cursor.execute("CREATE SCHEMA public")
 
-    def target(self, args=(testing.config_uri(),)):
+    def target(self, args=(config_uri(),)):
         from ...scripts.channel_processing import main
 
         # Start the post publication worker script.
@@ -81,7 +176,7 @@ class ChannelProcessingTestCase(unittest.TestCase):
         self.process.join()
         self.assertEqual(1, self.process.exitcode)
 
-    @testing.db_connect
+    @db_connect
     def test_new_module_inserted(self, cursor):
         self.target()
 
@@ -111,7 +206,7 @@ SELECT state FROM post_publications
 WHERE module_ident = %s ORDER BY timestamp DESC""", (module_ident,))
         self.assertEqual('Done/Success', cursor.fetchone()[0])
 
-    @testing.db_connect
+    @db_connect
     def test_revised_module_inserted(self, cursor):
         self.target()
 
@@ -255,7 +350,7 @@ SELECT state FROM post_publications
 WHERE module_ident = %s ORDER BY timestamp DESC""", (module_ident,))
         self.assertEqual('Done/Success', cursor.fetchone()[0])
 
-    @testing.db_connect
+    @db_connect
     @mock.patch('cnxpublishing.subscribers.remove_baked')
     def test_error_handling(self, cursor, mock_remove_collation):
         from ...scripts import channel_processing

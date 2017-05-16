@@ -24,7 +24,7 @@ import sys
 
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
-from pyramid.paster import bootstrap
+from pyramid.paster import bootstrap, setup_logging
 from pyramid.threadlocal import get_current_registry
 
 from cnxpublishing.config import CONNECTION_STRING
@@ -32,8 +32,6 @@ from cnxpublishing.events import create_pg_notify_event
 
 
 logger = logging.getLogger('channel_processing')
-# TODO make this a configuration option.
-CHANNELS = ['post_publication']
 
 
 def usage(argv):
@@ -44,10 +42,25 @@ def usage(argv):
     sys.exit(1)
 
 
-def processor(config_uri):
-    registry = bootstrap(config_uri)['registry']
+def _get_channels(settings):
+    setting_name = 'channel_processing.channels'
+    channels = [channel.strip()
+                for channel in settings[setting_name].split(',')
+                if channel.strip()]
+    return list(channels)
+
+
+def processor():
+    """Churns over PostgreSQL notifications on configured channels.
+    This requires the application be setup and the registry be available.
+    This function uses the database connection string and a list of
+    pre configured channels.
+
+    """
+    registry = get_current_registry()
     settings = registry.settings
     connection_string = settings[CONNECTION_STRING]
+    channels = _get_channels(settings)
 
     # Code adapted from
     # http://initd.org/psycopg/docs/advanced.html#asynchronous-notifications
@@ -55,7 +68,7 @@ def processor(config_uri):
         conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
 
         with conn.cursor() as cursor:
-            for channel in CHANNELS:
+            for channel in channels:
                 cursor.execute('LISTEN {}'.format(channel))
                 logger.debug('Waiting for notifications on channel "{}"'
                              .format(channel))
@@ -86,7 +99,10 @@ def main(argv=sys.argv):
         usage(argv)
 
     config_uri = argv[1]
-    processor(config_uri)
+    bootstrap(config_uri)
+    setup_logging(config_uri)
+
+    processor()
 
 
 if __name__ == '__main__':

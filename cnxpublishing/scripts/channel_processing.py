@@ -34,7 +34,7 @@ from cnxpublishing.events import create_pg_notify_event
 logger = logging.getLogger('channel_processing')
 
 
-def usage(argv):
+def usage(argv):  # pragma: no cover
     cmd = os.path.basename(argv[0])
     print('Usage: {} <config_uri>\n'
           '(example: "{} development.ini")'.format(cmd, cmd),
@@ -42,7 +42,7 @@ def usage(argv):
     sys.exit(1)
 
 
-def _get_channels(settings):
+def _get_channels(settings):  # pragma: no cover
     setting_name = 'channel_processing.channels'
     channels = [channel.strip()
                 for channel in settings[setting_name].split(',')
@@ -50,7 +50,7 @@ def _get_channels(settings):
     return list(channels)
 
 
-def processor():
+def processor():  # pragma: no cover
     """Churns over PostgreSQL notifications on configured channels.
     This requires the application be setup and the registry be available.
     This function uses the database connection string and a list of
@@ -93,7 +93,7 @@ def processor():
                         logger.exception('Logging an uncaught exception')
 
 
-def main(argv=sys.argv):
+def main(argv=sys.argv):  # pragma: no cover
     if len(argv) < 2:
         usage(argv)
 

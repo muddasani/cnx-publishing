@@ -204,36 +204,6 @@ class DeprecatedChannelProcessingTestCase(unittest.TestCase):
         self.process.start()
 
     @db_connect
-    def test_new_module_inserted(self, cursor):
-        self.target()
-
-        binder = use_cases.setup_COMPLEX_BOOK_ONE_in_archive(self, cursor)
-        cursor.connection.commit()
-
-        cursor.execute("""\
-SELECT module_ident FROM modules
-    WHERE portal_type = 'Collection'
-    ORDER BY module_ident DESC LIMIT 1""")
-        module_ident = cursor.fetchone()[0]
-
-        wait_for_module_state(module_ident)
-
-        cursor.execute("""\
-SELECT nodeid, is_collated FROM trees WHERE documentid = %s
-    ORDER BY nodeid""", (module_ident,))
-        is_collated = [i[1] for i in cursor.fetchall()]
-        self.assertEqual([False, True], is_collated)
-
-        content = get_collated_content(
-            binder[0][0].ident_hash, binder.ident_hash, cursor)
-        self.assertIn('there will be cake', content[:])
-
-        cursor.execute("""\
-SELECT state FROM post_publications
-WHERE module_ident = %s ORDER BY timestamp DESC""", (module_ident,))
-        self.assertEqual('Done/Success', cursor.fetchone()[0])
-
-    @db_connect
     def test_revised_module_inserted(self, cursor):
         self.target()
 

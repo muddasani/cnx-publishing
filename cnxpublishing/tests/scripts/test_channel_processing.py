@@ -116,8 +116,13 @@ class ChannelProcessingTestCase(unittest.TestCase):
             self.subscribers = []
         self.subscribers.append(subscriber)
 
+    def test_usage(self):
+        self.target(args=())
+        self.process.join()
+        self.assertEqual(1, self.process.exitcode)
+
     @mock.patch('cnxpublishing.scripts.channel_processing.bootstrap')
-    def target(self, mocked_bootstrap):
+    def target(self, mocked_bootstrap, args=(config_uri(),)):
 
         def wrapped_bootstrap(config_uri, request=None, options=None):
             bootstrap_info = bootstrap(config_uri, request, options)
@@ -134,7 +139,7 @@ class ChannelProcessingTestCase(unittest.TestCase):
         # Start the post publication worker script.
         # (The post publication worker is in an infinite loop, this is a way to
         # test it)
-        args = ('cnx-publishing-channel-processing', config_uri(),)
+        args = ('cnx-publishing-channel-processing',) + args
         self.process = Process(target=main, args=(args,))
         self.process.start()
         # Wait for the process to fully start.
@@ -197,11 +202,6 @@ class DeprecatedChannelProcessingTestCase(unittest.TestCase):
         args = ('cnx-publishing-channel-processing',) + args
         self.process = Process(target=main, args=(args,))
         self.process.start()
-
-    def test_usage(self):
-        self.target(args=())
-        self.process.join()
-        self.assertEqual(1, self.process.exitcode)
 
     @db_connect
     def test_new_module_inserted(self, cursor):

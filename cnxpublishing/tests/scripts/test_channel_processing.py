@@ -65,6 +65,10 @@ def subscriber(event, cursor):
                    (data,))
 
 
+def error_subscriber(event):
+    raise Exception('forced exception for testing purposes')
+
+
 class ChannelProcessingTestCase(unittest.TestCase):
 
     settings = None
@@ -82,12 +86,13 @@ class ChannelProcessingTestCase(unittest.TestCase):
 
         cursor.execute('CREATE TABLE IF NOT EXISTS "faux_channel_received" '
                        '("id" SERIAL PRIMARY KEY, "data" JSON)')
-        
 
     def tearDown(self):
         # Terminate the post publication worker script.
         if hasattr(self, 'process') and self.process.is_alive():
             self.process.terminate()
+        if hasattr(self, 'subscribers'):
+            delattr(self, 'subscribers')
         testing.tearDown()
 
     @classmethod
@@ -103,6 +108,13 @@ class ChannelProcessingTestCase(unittest.TestCase):
         pl = json.dumps(payload)
         cursor.execute("select pg_notify(%s, %s);", (channel, pl,))
         cursor.connection.commit()
+        # Wait for the channel processor to process the notification.
+        time.sleep(1)
+
+    def add_subscriber(self, subscriber):
+        if not hasattr(self, 'subscribers'):
+            self.subscribers = []
+        self.subscribers.append(subscriber)
 
     @mock.patch('cnxpublishing.scripts.channel_processing.bootstrap')
     def target(self, mocked_bootstrap):
@@ -111,8 +123,9 @@ class ChannelProcessingTestCase(unittest.TestCase):
             bootstrap_info = bootstrap(config_uri, request, options)
             registry = bootstrap_info['registry']
             # Register the test subscriber
-            from cnxpublishing.events import PGNotifyEvent
-            registry.registerHandler(subscriber, (PGNotifyEvent,))
+            for subscriber in self.subscribers:
+                from cnxpublishing.events import PGNotifyEvent
+                registry.registerHandler(subscriber, (PGNotifyEvent,))
             return bootstrap_info
 
         mocked_bootstrap.side_effect = wrapped_bootstrap
@@ -124,21 +137,35 @@ class ChannelProcessingTestCase(unittest.TestCase):
         args = ('cnx-publishing-channel-processing', config_uri(),)
         self.process = Process(target=main, args=(args,))
         self.process.start()
-
-    @db_connect
-    def test(self, cursor):
-        self.target()
         # Wait for the process to fully start.
         time.sleep(1)
 
+    @db_connect
+    def test(self, cursor):
+        self.add_subscriber(subscriber)
+        self.target()
+
         payload = {'a': 25, 'b': 24, 'c': 23}
         self.make_one('faux_channel', payload)
-        # Wait for the process to process.
-        time.sleep(1)
 
         cursor.execute('SELECT data FROM faux_channel_received')
         data = cursor.fetchone()[0]
         assert data['payload'] == payload
+
+    def test_error_recovery(self):
+        self.add_subscriber(error_subscriber)
+        self.target()
+
+        payload = {'error': 0, 'bug': '*.*'}
+        self.make_one('faux_channel', payload)
+
+        # Unfortunately there isn't an easy way to test for the logging
+        # output from an exception. So the best we can do is check to see
+        # if the process continues running.
+        # You can see this in action if you configure the logger in the
+        # testing.ini file.
+
+        assert self.process.is_alive()
 
 
 class DeprecatedChannelProcessingTestCase(unittest.TestCase):

@@ -86,7 +86,6 @@ def processor():
                     logger.debug('Got NOTIFY: pid={} channel={} payload={}'
                                  .format(notif.pid, notif.channel,
                                          notif.payload))
-                    # TODO Error handling and recovery for...
                     event = create_pg_notify_event(notif)
                     try:
                         registry.notify(event)

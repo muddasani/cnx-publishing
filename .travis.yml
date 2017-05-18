@@ -58,9 +58,10 @@ before_script:
   - cd session_exec
   - make USE_PGXS=1 -e && sudo make USE_PGXS=1 -e install
   - cd ..
+  - pip install -U pytest pytest-runner pytest-cov
 script:
-  # This is the same as `python setup.py test` with a coverage wrapper.
-  - coverage run --source=cnxpublishing setup.py test
+  # This is the same as `pytest cnxpublishing` with a coverage wrapper.
+  - python setup.py test --addopts="cnxpublishing"
 after_success:
   # Report test coverage to codecov.io
   - codecov

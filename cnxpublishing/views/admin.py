@@ -32,6 +32,9 @@ def admin_index(request):  # pragma: no cover
             {'name': 'Post Publication Logs',
              'uri': request.route_url('admin-post-publications'),
              },
+            {'name': 'Content Status',
+             'uri': request.route_url('admin-content-status'),
+             },
             ],
         }
 
@@ -90,3 +93,85 @@ ORDER BY bpsa.created DESC LIMIT 100""")
                 })
 
     return {'states': states}
+
+
+def get_baking_statuses_sql(request):
+    num_entries = request.GET.get('number', 100)
+    page = request.GET.get('page', 1)
+    start_entry = (int(page) - 1) * int(num_entries)
+    sort_val = request.GET.get('sort', 'bpsa.created')
+    sort_order = request.GET.get('sort_order', 'DESC')
+    # have to change this to loop through all vars with name/author in them and make list
+    ident_hash_filter = request.GET.get('ident_hash', None)
+    author_filters = request.GET.get('author0', None)
+
+    args={}
+    args['author_filters'] = []
+
+    sql_filters = "WHERE"
+    # TODO have to add in all the conditions for if no filters
+    if ident_hash_filter != None:
+        args['ident_hash'] = ident_hash_filter
+        sql_filters += " ident_hash(m.uuid, m.major_version, m.minor_version)='" + ident_hash_filter
+        sql_filters += "' AND "
+    if author_filters != None:
+        author_list = author_filters.split(",")
+        sql_filters += "("
+        for i in range(len(author_list)):
+            args['author_filters'].append(author_list[i])
+            args["author" + str(i)] = author_list[i]
+            sql_filters += "%(author{})s=ANY(m.authors) OR ".format(i)
+        if sql_filters.endswith("OR ") > 0:
+            sql_filters = sql_filters[:-3]
+        sql_filters += ") "
+    if sql_filters.endswith("AND ") > 0:
+        sql_filters = sql_filters[:-4]
+    if sql_filters == "WHERE":
+        sql_filters = ""
+
+    sort = ' '.join([sort_val, sort_order])
+    statement = """SELECT ident_hash(m.uuid, m.major_version, m.minor_version),
+                       m.name, m.authors, bpsa.created, bpsa.result_id::text
+                FROM document_baking_result_associations AS bpsa
+                     INNER JOIN modules AS m USING (module_ident)
+                {}
+                ORDER BY {}
+                LIMIT %(num_entries)s OFFSET %(start_entry)s
+                """.format(sql_filters, sort)
+    args.update({'sort': sort,
+                 'start_entry': start_entry,
+                 'num_entries': num_entries,
+                 'page': page})
+    return statement, args
+
+
+@view_config(route_name='admin-content-status', request_method='GET',
+             renderer='cnxpublishing.views:templates/content-status.html',
+             permission='administer')
+def admin_content_status(request):
+    settings = request.registry.settings
+    db_conn_str = settings[config.CONNECTION_STRING]
+
+    statement, args = get_baking_statuses_sql(request)
+    states = []
+    with psycopg2.connect(db_conn_str) as db_conn:
+        with db_conn.cursor() as cursor:
+            cursor.execute(statement, vars=args)
+            for row in cursor.fetchall():
+                message = ''
+                result_id = row[-1]
+                result = AsyncResult(id=result_id)
+                if result.failed():  # pragma: no cover
+                    message = result.traceback
+                states.append({
+                    'ident_hash': row[0],
+                    'title': row[1].decode('utf-8'),
+                    'authors': row[2],
+                    'created': row[3],
+                    'state': result.state,
+                    'state_message': message,
+                })
+
+    args.update({'states': states})
+    print(args)
+    return args

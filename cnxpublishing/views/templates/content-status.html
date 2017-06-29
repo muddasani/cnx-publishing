@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>Conent Status</h1>
+  <!-- should js go somewhere else? -->
+  <script>
+    function addFilter(fieldName) {
+      var html_str = '<textarea rows=1 cols=25 class="' + fieldName + '_filter"></textarea><br>';
+      document.getElementById(fieldName).innerHTML += html_str;
+    }
+    function filterResults() {
+      var link = "/a/content-status/?";
+
+      var pageNum = document.getElementById('pageNum').value;
+      var numEntries = document.getElementById('numEntries').value;
+      var ident_hash = document.getElementById('ident_hash_filter').value;
+      if (pageNum != '') link += "page=" + pageNum + "&";
+      if (numEntries != '') link += "number=" + numEntries + "&";
+      if (ident_hash != '') link += "ident_hash=" + ident_hash + "&";
+
+      var authors = document.getElementsByClassName("author_filter")
+      for(var i = 0; i < authors.length; i++) {
+        if (authors[i].value != '') link += "author" + i + "=" + authors[i].value + "&";
+      }
+
+      var statuses = document.getElementsByClassName("status_filter")
+      var excluded = ""
+      for(var i = 0; i < statuses.length; i++) {
+        if (! statuses[i].checked) excluded += statuses[i].value + ",";
+      }
+      if (excluded != "") link += "exculde_statuses=" + excluded
+
+      window.location.href = link;
+    }
+  </script>
+
+  <!-- click colums to sort? -->
+  Filters:<br>
+  Status: <br>
+    <input type="checkbox" class="status_filter" checked value="PENDING"> PENDING&emsp;&emsp;&emsp;
+    <input type="checkbox" class="status_filter" checked value="STARTED"> STARTED&emsp;&emsp;&emsp;
+    <input type="checkbox" class="status_filter" checked value="RETRY"> RETRY&emsp;&emsp;&emsp;
+    <input type="checkbox" class="status_filter" checked value="FAILURE"> FAILURE&emsp;&emsp;&emsp;
+    <input type="checkbox" class="status_filter" value="SUCCESS"> SUCCESS
+  <br><br>Author:
+    <button id="authorAdd" onclick="addFilter('author')">+</button><br>
+    <div id="author">
+    {% for author in author_filters %}
+      <textarea rows=1 cols=25 class="author_filter">{{author}}</textarea><br>
+    {% endfor %}
+    <textarea rows=1 cols=25 class="author_filter"></textarea><br>
+    </div>
+  <br>
+  <br>ident_hash:
+    <textarea rows=1 cols=50 id="ident_hash_filter" value="">{{ident_hash}}</textarea><br>
+  Entries Per Page:  <textarea rows=1 cols=5 id="numEntries">{{num_entries}}</textarea><br>
+  Page:  <textarea rows=1 cols=5 id="pageNum">{{page}}</textarea><br>
+  <br>
+  <button type="button" onclick="filterResults()">Filter</button><br>
+  <br><br><br>
+
+  <table cellpadding="15">
+    <tr>
+      <th onclick="sortTable(0)">Created</th>
+      <th onclick="sortTable(1)">Ident_hash</th>
+      <th onclick="sortTable(2)">Title</th>
+      <th onclick="sortTable(3)">Author</th>
+      <th onclick="sortTable(4)">State</th>
+      <th onclick="sortTable(5)">Message</th>
+    </tr>
+    {% for state in states %}
+      <tr>
+        <td>{{ state.created.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        <td>
+          <!-- make this a link to another view page with more info? -->
+          <a href="/contents/">{{ state.ident_hash }}</a>
+        </td>
+        <td>{{ state.title }}</td>
+        <td>{{ state.authors }}</td>
+        <td>{{ state.state }}</td>
+        <td><pre>{{ state.state_message }}</pre></td>
+      </tr>
+    {% endfor %}
+  </table>
+{% endblock %}

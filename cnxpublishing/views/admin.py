@@ -19,6 +19,25 @@ from .. import config
 from .moderation import get_moderation
 from .api_keys import get_api_keys
 
+STATE_ICONS = {
+    "SUCCESS": {'class': 'fa fa-check-square',
+                'style': 'font-size:20px;color:limeGreen'},
+    "STARTED": {'class': 'fa fa-exclamation-triangle',
+                'style': 'font-size:20px;color:gold'},
+    "PENDING": {'class': 'fa fa-exclamation-triangle',
+                'style': 'font-size:20px;color:gold'},
+    "RETRY": {'class': 'a fa-close',
+              'style': 'font-size:20px;color:red'},
+    "FAILURE": {'class': 'fa fa-close',
+                'style': 'font-size:20px;color:red'}}
+SORTS_DICT = {
+    "bpsa.created": 'created',
+    "m.name": 'name',
+    "STATE": 'state'}
+ARROW_MATCH = {
+    "ASC": 'fa fa-angle-up',
+    "DESC": 'fa fa-angle-down'}
+
 
 @view_config(route_name='admin-index', request_method='GET',
              renderer="cnxpublishing.views:templates/index.html",
@@ -289,8 +308,8 @@ def get_baking_statuses_sql(request):
             format(page, num_entries))
     sort = request.GET.get('sort', 'bpsa.created DESC')
     if (len(sort.split(" ")) != 2 or
-            sort.split(" ")[0] not in ['bpsa.created', 'STATE', 'm.name'] or
-            sort.split(" ")[1] not in ['ASC', 'DESC']):
+            sort.split(" ")[0] not in SORTS_DICT.keys() or
+            sort.split(" ")[1] not in ARROW_MATCH.keys()):
         raise httpexceptions.HTTPBadRequest(
             'invalid sort: {}'.format(sort))
     if sort == "STATE ASC" or sort == "STATE DESC":
@@ -363,6 +382,8 @@ def admin_content_status(request):
         if not(state['state'] in status_filters):
             final_states.append(state)
     sort = request.GET.get('sort', 'bpsa.created DESC')
+    sort_match = SORTS_DICT[sort.split(' ')[0]]
+    args['sort_' + sort_match] = ARROW_MATCH[sort.split(' ')[1]]
     args['sort'] = sort
     if sort == "STATE ASC":
         final_states = sorted(final_states, key=lambda x: x['state'])

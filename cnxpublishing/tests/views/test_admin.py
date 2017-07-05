@@ -97,3 +97,30 @@ SELECT
                  'state_message': '',
                  'title': 'Book of Infinity'},
                 ]}, resp_data)
+
+    # def test_admin_content_status_no_filters(self):
+    #     request = testing.DummyRequest()
+    #     request.matched_route = mock.Mock()
+    #     request.matched_route.name = 'admin-content-status'
+    #
+    #     from ...views.admin import admin_content_status
+    #     content = admin_content_status(self.request)
+    #     # TODO add actual test
+    #
+    # def test_admin_content_status_w_filters(self):
+    #     request = testing.DummyRequest()
+    #     request.matched_route = mock.Mock()
+    #     request.matched_route.name = 'admin-content-status'
+    #
+    #     from ...views.admin import admin_content_status
+    #     content = admin_content_status(self.request)
+    #     # TODO add actual test
+    #
+    # def test_admin_content_status_single_page(self):
+    #     request = testing.DummyRequest()
+    #     request.matched_route = mock.Mock()
+    #     request.matched_route.name = 'admin-content-status-single'
+    #
+    #     from ...views.admin import admin_content_status_single
+    #     content = admin_content_status_single(self.request)
+    #     # TODO add actual test

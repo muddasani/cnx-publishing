@@ -29,10 +29,12 @@ STATE_ICONS = {
     "FAILURE": {'class': 'fa fa-close',
                 'style': 'font-size:20px;color:red'}}
 SORTS_DICT = {
-    "bpsa.created DESC": 'newSort',
-    "bpsa.created ASC": 'oldSort',
-    "m.name": 'nameSort',
-    "STATE": 'stateSort'}
+    "bpsa.created": 'created',
+    "m.name": 'name',
+    "STATE": 'state'}
+ARROW_MATCH = {
+    "ASC": 'fa fa-angle-up',
+    "DESC": 'fa fa-angle-down'}
 
 
 @view_config(route_name='admin-index', request_method='GET',
@@ -115,7 +117,6 @@ ORDER BY bpsa.created DESC LIMIT 100""")
 
 def get_baking_statuses_sql(request):
     args = {}
-
     num_entries = request.GET.get('number', 100)
     page = request.GET.get('page', 1)
     try:
@@ -125,11 +126,12 @@ def get_baking_statuses_sql(request):
             'invalid page({}) or entries per page({})'.
             format(page, num_entries))
     sort = request.GET.get('sort', 'bpsa.created DESC')
-    if sort not in SORTS_DICT.keys():
+    if (len(sort.split(" ")) != 2 or
+            sort.split(" ")[0] not in SORTS_DICT.keys() or
+            sort.split(" ")[1] not in ARROW_MATCH.keys()):
         raise httpexceptions.HTTPBadRequest(
-            'invalid sort({})'.format(sort))
-    args[SORTS_DICT[sort]] = 'selected'
-    if sort == "STATE":
+            'invalid sort: {}'.format(sort))
+    if sort == "STATE ASC" or sort == "STATE DESC":
         sort = 'bpsa.created DESC'
     ident_hash_filter = request.GET.get('ident_hash', '')
     author_filter = request.GET.get('author', '')
@@ -209,9 +211,16 @@ def admin_content_status(request):
     for state in states:
         if state['state'] in status_filters:
             final_states.append(state)
+
     sort = request.GET.get('sort', 'bpsa.created DESC')
-    if sort == "STATE":
+    sort_match = SORTS_DICT[sort.split(' ')[0]]
+    args['sort_' + sort_match] = ARROW_MATCH[sort.split(' ')[1]]
+    args['sort'] = sort
+    if sort == "STATE ASC":
         final_states = sorted(final_states, key=lambda x: x['state'])
+    if sort == "STATE DESC":
+        final_states = sorted(final_states,
+                              key=lambda x: x['state'], reverse=True)
 
     args.update({'states': final_states})
     return args

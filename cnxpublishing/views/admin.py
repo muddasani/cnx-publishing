@@ -8,6 +8,7 @@
 from __future__ import absolute_import
 
 from datetime import datetime, timedelta
+from re import compile, match
 
 import psycopg2
 from celery.result import AsyncResult
@@ -313,14 +314,13 @@ def get_baking_statuses_sql(request):
             'invalid sort: {}'.format(sort))
     if sort == "STATE ASC" or sort == "STATE DESC":
         sort = 'bpsa.created DESC'
-    ident_hash_filter = request.GET.get('ident_hash', '')
+    uuid_filter = request.GET.get('uuid', '')
     author_filter = request.GET.get('author', '')
 
     sql_filters = "WHERE"
-    if ident_hash_filter != '':
-        args['ident_hash'] = ident_hash_filter
-        sql_filters += (" ident_hash(m.uuid, m.major_version, m.minor_version)"
-                        "=%(ident_hash)s AND ")
+    if uuid_filter != '':
+        args['uuid'] = uuid_filter
+        sql_filters += " m.uuid=%(uuid)s AND "
     if author_filter != '':
         author_filter = author_filter.decode('utf-8')
         sql_filters += "%(author)s=ANY(m.authors) "
@@ -332,7 +332,8 @@ def get_baking_statuses_sql(request):
         sql_filters = ""
 
     statement = """SELECT ident_hash(m.uuid, m.major_version, m.minor_version),
-                       m.name, m.authors, bpsa.created, bpsa.result_id::text
+                       m.name, m.authors, m.uuid,
+                       bpsa.created, bpsa.result_id::text
                 FROM document_baking_result_associations AS bpsa
                      INNER JOIN modules AS m USING (module_ident)
                 {}
@@ -366,8 +367,9 @@ def admin_content_status(request):
                 states.append({
                     'ident_hash': row[0],
                     'title': row[1].decode('utf-8'),
-                    'authors': row[2],
-                    'created': row[3],
+                    'authors': format_autors(row[2]),
+                    'uuid': row[3],
+                    'created': row[4],
                     'state': result.state,
                     'state_message': message,
                 })
@@ -399,33 +401,43 @@ def admin_content_status(request):
              renderer='templates/content-status-single.html',
              permission='administer')
 def admin_content_status_single(request):
-    ident_hash = request.matchdict['ident_hash']
+    uuid = request.matchdict['uuid']
+    pat = ("[0-9a-z]{8}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{12}$")
+    if not compile(pat).match(uuid):
+        raise httpexceptions.HTTPBadRequest(
+            '{} is not a valid uuid'.format(uuid))
 
     settings = request.registry.settings
     with psycopg2.connect(settings[config.CONNECTION_STRING]) as db_conn:
         with db_conn.cursor() as cursor:
             cursor.execute("""
                 SELECT ident_hash(m.uuid, m.major_version, m.minor_version),
-                       m.name, m.authors, bpsa.created, bpsa.result_id::text
+                    m.uuid, m.name, m.authors,
+                    bpsa.created, bpsa.result_id::text
                 FROM document_baking_result_associations AS bpsa
-                     INNER JOIN modules AS m USING (module_ident)
-                WHERE ident_hash(m.uuid, m.major_version, m.minor_version)=%s;
-                    """, vars=(ident_hash,))
+                    INNER JOIN modules AS m USING (module_ident)
+                WHERE uuid=%s ORDER BY bpsa.created DESC;
+                    """, vars=(uuid,))
             modules = cursor.fetchall()
             if len(modules) == 0:
                 raise httpexceptions.HTTPBadRequest(
-                    '{} is not a book'.format(ident_hash))
-            row = modules[0]
-            message = ''
-            result_id = row[-1]
-            result = AsyncResult(id=result_id)
-            if result.failed():  # pragma: no cover
-                message = result.traceback
-            return {
-                'ident_hash': row[0],
-                'title': row[1].decode('utf-8'),
-                'authors': row[2],
-                'created': str(row[3]),
-                'state': result.state,
-                'state_message': message,
-            }
+                    '{} is not a book'.format(uuid))
+
+            states = []
+            args = {'uuid': str(row[1]),
+                    'title': row[2].decode('utf-8'),
+                    'authors': format_autors(row[3]), }
+            for row in modules:
+                message = ''
+                result_id = row[-1]
+                result = AsyncResult(id=result_id)
+                if result.failed():  # pragma: no cover
+                    message = result.traceback
+                states.append({
+                    'ident_hash': row[0],
+                    'created': str(row[4]),
+                    'state': result.state,
+                    'state_message': message,
+                })
+            args['states'] = states
+            return args

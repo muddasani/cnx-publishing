@@ -330,16 +330,37 @@ class ContentStatusViewsTestCase(unittest.TestCase):
     def test_admin_content_status_single_page(self):
         request = testing.DummyRequest()
 
-        ident = 'd5dbbd8e-d137-4f89-9d0a-3ac8db53d8ee@1.1'
-        request.matchdict['ident_hash'] = ident
+        uuid = 'd5dbbd8e-d137-4f89-9d0a-3ac8db53d8ee'
+        request.matchdict['uuid'] = uuid
 
         from ...views.admin import admin_content_status_single
         content = admin_content_status_single(request)
+        print(content)
         self.assertEqual({
-            'ident_hash': ident,
+            'uuid': uuid,
             'title': 'Book of Infinity',
             'authors': 'marknewlyn, charrose',
-            'created': content['created'],
-            'state': 'PENDING',
-            'state_message': '',
+            'states': [
+                {'version': '1.1',
+                 'recipe': None,
+                 'created': content['states'][0]['created'],
+                 'state': 'PENDING',
+                 'state_message': ''},
+                {'ident_hash': content['states'][1]['ident_hash'],
+                 'created': content['states'][1]['created'],
+                 'state': 'PENDING',
+                 'state_message': ''}
+            ]
         }, content)
+
+    @unittest.skip("celery is too global, run one at a time")
+    def test_admin_content_status_single_page_POST(self):
+        request = testing.DummyRequest()
+        from ...views.admin import admin_content_status_single_POST
+
+        uuid = 'd5dbbd8e-d137-4f89-9d0a-3ac8db53d8ee'
+        request.matchdict['uuid'] = uuid
+        content = admin_content_status_single_POST(request)
+        self.assertEqual(content['response'],
+                         'Book of Infinity is already baking/set to bake')
+>>>>>>> a475356... test fix? what is going on with master??

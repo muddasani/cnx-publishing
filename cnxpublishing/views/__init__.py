@@ -45,8 +45,12 @@ def declare_browsable_routes(config):
     add_route('admin-moderation', '/a/moderation/')
     add_route('admin-api-keys', '/a/api-keys/')
     add_route('admin-post-publications', '/a/post-publications/')
+
     add_route('admin-content-status', '/a/content-status/')
-    add_route('admin-content-status-single', '/a/content-status/{uuid}')
+    add_route('admin-content-status-single', '/a/content-status/{uuid}',
+              request_method='GET')
+    add_route('admin-content-status-single-POST', '/a/content-status/{uuid}',
+              request_method='POST')
 
 
 def includeme(config):

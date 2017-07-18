@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>Print Styles</h1>
+  {% if print_style %}
+     <h2>{{print_style}}</h2>
+  {% endif %}
+  <table>
+    <tr>
+      <th>name</th>
+      <th>print style</th>
+      <th>recipie</th>
+      <th>baked timestamp</th>
+    </tr>
+    {% for style in styles %}
+      <tr>
+        <td>{{ style.name }}</td>
+        <td>
+          <a href="/status/print-style-history/{{ style.print_style }}/{{ style.version }}">
+            {{ style.print_style }}
+          </a>
+        </td>
+        <td>{{ style.recipe }}</td>
+        <td>{{ style.baked }}</td>
+      </tr>
+    {% endfor %}
+  </table>
+{% endblock %}

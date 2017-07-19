@@ -25,27 +25,23 @@ def print_style_history(request):
     with psycopg2.connect(db_conn_str) as db_conn:
         with db_conn.cursor() as cursor:
             cursor.execute("""
-            SELECT lm.print_style, baked, recipe, name, psr.tag
-            FROM latest_modules as lm
-            JOIN print_style_recipes as psr
-                ON lm.print_style=psr.print_style
-            WHERE portal_type='Collection' AND baked is not null
-            ORDER BY baked;
+            SELECT print_style, revised, fileid, tag
+            FROM print_style_recipes
+            ORDER BY revised DESC;
             """)
             response = cursor.fetchall()
             for row in response:
                 styles.append({
                     'print_style': row[0],
-                    'baked': str(row[1]),
+                    'revised': str(row[1]),
                     'recipe': row[2],
-                    'name': row[3].decode('utf-8'),
-                    'version': row[4],
+                    'version': row[3],
                     'print_style_url': request.route_url(
                         'print-style-history-name',
                         name=row[0]),
                     'recipe_url': request.route_url(
                         'print-style-history-version',
-                        name=row[0], version=row[4])
+                        name=row[0], version=row[3])
                 })
     return styles
 
@@ -95,25 +91,21 @@ def print_style_history_name(request):
     with psycopg2.connect(db_conn_str) as db_conn:
         with db_conn.cursor() as cursor:
             cursor.execute("""
-            SELECT lm.print_style, baked, recipe, name, psr.tag
-            FROM latest_modules as lm
-            JOIN print_style_recipes as psr
-                ON lm.print_style=psr.print_style
-            WHERE portal_type='Collection' AND baked is not null
-                AND lm.print_style=(%s)
-            ORDER BY baked;
+            SELECT print_style, revised, fileid, tag
+            FROM print_style_recipes
+            WHERE print_style=(%s)
+            ORDER BY revised DESC;
             """, vars=(name, ))
             response = cursor.fetchall()
             for row in response:
                 styles.append({
                     'print_style': row[0],
-                    'baked': row[1].strftime('%Y-%m-%d %H:%M:%S'),
+                    'revised': row[1].strftime('%Y-%m-%d %H:%M:%S'),
                     'recipe': row[2],
-                    'name': row[3].decode('utf-8'),
-                    'version': row[4],
+                    'version': row[3],
                     'recipe_url': request.route_url(
                         'print-style-history-version',
-                        name=row[0], version=row[4])
+                        name=row[0], version=row[3])
                 })
     return styles
 

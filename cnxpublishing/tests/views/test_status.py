@@ -23,15 +23,7 @@ def add_data(self):
     with self.db_connect() as db_conn:
         with db_conn.cursor() as cursor:
             # Insert one book into archive.
-            book = use_cases.setup_BOOK_in_archive(self, cursor)
-            db_conn.commit()
-
-            # Insert some data into the association table.
-            cursor.execute("""
-            UPDATE latest_modules
-            SET baked=%s, recipe=1, portal_type='Collection'
-            WHERE true;
-            """, vars=(datetime.today(), ))
+            use_cases.setup_BOOK_in_archive(self, cursor)
             db_conn.commit()
 
             cursor.execute("""\
@@ -39,7 +31,6 @@ def add_data(self):
             (print_style, fileid, tag)
             VALUES
             ('*print style*', 1, '1.0')""")
-    return book
 
 
 class PostStyleViewsTestCase(unittest.TestCase):
@@ -61,6 +52,7 @@ class PostStyleViewsTestCase(unittest.TestCase):
         self.config.add_route('print-style-history-version',
                               '/status/print-style-history/{name}/{version}')
         init_db(self.db_conn_str, True)
+        add_data(self)
 
     def tearDown(self):
         with self.db_connect() as db_conn:
@@ -72,16 +64,13 @@ class PostStyleViewsTestCase(unittest.TestCase):
     def test_print_style_history(self):
         request = testing.DummyRequest()
 
-        book = add_data(self)
-
         from ...views.status import print_style_history
         content = print_style_history(request)
         self.assertEqual([{
-                'name': 'Document One of Infinity',
                 'version': '1.0',
                 'recipe': 1,
                 'print_style': '*print style*',
-                'baked': content[0]['baked'],
+                'revised': content[0]['revised'],
                 'print_style_url': 'http://example.com/status/print-style-history/*print%20style*',
                 'recipe_url': 'http://example.com/status/print-style-history/*print%20style*/1.0'
             }],
@@ -91,7 +80,6 @@ class PostStyleViewsTestCase(unittest.TestCase):
         request = testing.DummyRequest()
         request.POST = {'files': {'recipe': 'test fake file'},
                         'data': {'name': 'name', 'version': '1.0'}}
-        book = add_data(self)
 
         from ...views.status import print_style_history_POST
         content = print_style_history_POST(request)
@@ -118,16 +106,13 @@ class PostStyleViewsTestCase(unittest.TestCase):
         name = '*print style*'
         request.matchdict['name'] = name
 
-        book = add_data(self)
-
         from ...views.status import print_style_history_name
         content = print_style_history_name(request)
         self.assertEqual([{
-                'name': 'Document One of Infinity',
                 'version': '1.0',
                 'recipe': 1,
                 'print_style': '*print style*',
-                'baked': content[0]['baked'],
+                'revised': content[0]['revised'],
                 'recipe_url': 'http://example.com/status/print-style-history/*print%20style*/1.0'
             }],
             content)
@@ -138,8 +123,6 @@ class PostStyleViewsTestCase(unittest.TestCase):
         name = '*print style*'
         request.matchdict['name'] = name
         request.matchdict['version'] = '1.0'
-
-        book = add_data(self)
 
         from ...views.status import print_style_history_version
         with self.assertRaises(httpexceptions.HTTPFound) as cm:

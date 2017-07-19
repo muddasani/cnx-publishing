@@ -42,14 +42,7 @@ def add_data(self):
     return book
 
 
-# FIXME There is an issue with setting up the celery app more than once.
-#       Apparently, creating the app a second time doesn't really create
-#       it again. There is some global state hanging around that we can't
-#       easily get at. This causes the task results tables used in these
-#       views to not exist, because the code believes it's already been
-#       initialized.
-# @unittest.skip("celery is too global")
-class PostPublicationsViewsTestCase(unittest.TestCase):
+class PostStyleViewsTestCase(unittest.TestCase):
     maxDiff = None
 
     @classmethod
@@ -63,6 +56,10 @@ class PostPublicationsViewsTestCase(unittest.TestCase):
         self.config = testing.setUp(settings=self.settings)
         self.config.include('cnxpublishing.tasks')
         self.config.add_route('resource', '/resources/{hash}{ignore:(/.*)?}')  # noqa cnxarchive.views:get_resource
+        self.config.add_route('print-style-history-name',
+            '/status/print-style-history/{name}')
+        self.config.add_route('print-style-history-version',
+                  '/status/print-style-history/{name}/{version}')
         init_db(self.db_conn_str, True)
 
     def tearDown(self):
@@ -72,7 +69,6 @@ class PostPublicationsViewsTestCase(unittest.TestCase):
                 cursor.execute("CREATE SCHEMA public")
         testing.tearDown()
 
-    @unittest.skip("celery is too global, run one at a time")
     def test_print_style_history(self):
         request = testing.DummyRequest()
 
@@ -80,17 +76,17 @@ class PostPublicationsViewsTestCase(unittest.TestCase):
 
         from ...views.status import print_style_history
         content = print_style_history(request)
-        self.assertEqual({
-            'styles': [{
+        self.assertEqual([{
                 'name': 'Document One of Infinity',
                 'version': '1.0',
                 'recipe': 1,
                 'print_style': '*print style*',
-                'baked': content['styles'][0]['baked']
-            }]},
+                'baked': content[0]['baked'],
+                'print_style_url': 'http://example.com/status/print-style-history/*print%20style*',
+                'recipe_url': 'http://example.com/status/print-style-history/*print%20style*/1.0'
+            }],
             content)
 
-    @unittest.skip("celery is too global, run one at a time")
     def test_print_style_history_single_style(self):
         request = testing.DummyRequest()
 
@@ -101,18 +97,16 @@ class PostPublicationsViewsTestCase(unittest.TestCase):
 
         from ...views.status import print_style_history_name
         content = print_style_history_name(request)
-        self.assertEqual({
-            'print_style': name,
-            'styles': [{
+        self.assertEqual([{
                 'name': 'Document One of Infinity',
                 'version': '1.0',
                 'recipe': 1,
                 'print_style': '*print style*',
-                'baked': content['styles'][0]['baked']
-            }]},
+                'baked': content[0]['baked'],
+                'recipe_url': 'http://example.com/status/print-style-history/*print%20style*/1.0'
+            }],
             content)
 
-    # @unittest.skip("celery is too global, run one at a time")
     def test_print_style_history_single_version(self):
         request = testing.DummyRequest()
 

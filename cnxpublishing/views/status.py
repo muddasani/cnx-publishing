@@ -33,7 +33,6 @@ def print_style_history(request):
             ORDER BY baked;
             """)
             response = cursor.fetchall()
-            print(response)
             for row in response:
                 styles.append({
                     'print_style': row[0],

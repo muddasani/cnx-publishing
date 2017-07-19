@@ -43,7 +43,8 @@ def print_style_history(request):
                     'print_style_url': request.route_url(
                         'print-style-history-name',
                         name=row[0]),
-                    'recipe_url': request.route_url('print-style-history-version',
+                    'recipe_url': request.route_url(
+                        'print-style-history-version',
                         name=row[0], version=row[4])
                 })
     return styles
@@ -56,6 +57,7 @@ def print_style_history_POST(request):
     db_conn_str = settings[config.CONNECTION_STRING]
 
     files = request.POST.get('files')
+    f = files['recipe']
     data = request.POST.get('data')
     name = data['name']
     version = data['version']
@@ -64,18 +66,20 @@ def print_style_history_POST(request):
         with db_conn.cursor() as cursor:
             # add the file
             cursor.execute("""
-            INSERT INTO files (file, media_type)
-            VALUES (%s, 'text/css');""")
+                INSERT INTO files (file, media_type)
+                VALUES (%s, 'text/css');
+            """, vars=(f, ))
 
             cursor.execute("""
                 SELECT fileid FROM files ORDER BY fileid DESC LIMIT 1;""")
             fileid = cursor.fetchall()[0][0]
+            print(fileid)
 
             # add the file to print style table
             cursor.execute("""
-            INSERT INTO print_style_recipes
-            (print_style, tag, fileid)
-            VALUES (%s, %s, %s);
+                INSERT INTO print_style_recipes
+                (print_style, tag, fileid)
+                VALUES (%s, %s, %s);
             """, vars=(name, version, fileid, ))
     return {}
 
@@ -107,7 +111,8 @@ def print_style_history_name(request):
                     'recipe': row[2],
                     'name': row[3].decode('utf-8'),
                     'version': row[4],
-                    'recipe_url': request.route_url('print-style-history-version',
+                    'recipe_url': request.route_url(
+                        'print-style-history-version',
                         name=row[0], version=row[4])
                 })
     return styles

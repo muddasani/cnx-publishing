@@ -57,9 +57,9 @@ class PostStyleViewsTestCase(unittest.TestCase):
         self.config.include('cnxpublishing.tasks')
         self.config.add_route('resource', '/resources/{hash}{ignore:(/.*)?}')  # noqa cnxarchive.views:get_resource
         self.config.add_route('print-style-history-name',
-            '/status/print-style-history/{name}')
+                              '/status/print-style-history/{name}')
         self.config.add_route('print-style-history-version',
-                  '/status/print-style-history/{name}/{version}')
+                              '/status/print-style-history/{name}/{version}')
         init_db(self.db_conn_str, True)
 
     def tearDown(self):
@@ -86,6 +86,31 @@ class PostStyleViewsTestCase(unittest.TestCase):
                 'recipe_url': 'http://example.com/status/print-style-history/*print%20style*/1.0'
             }],
             content)
+
+    def test_print_style_history_post(self):
+        request = testing.DummyRequest()
+        request.POST = {'files': {'recipe': 'test fake file'},
+                        'data': {'name': 'name', 'version': '1.0'}}
+        book = add_data(self)
+
+        from ...views.status import print_style_history_POST
+        content = print_style_history_POST(request)
+
+        with self.db_connect() as db_conn:
+            with db_conn.cursor() as cursor:
+
+                cursor.execute("SELECT fileid, file, media_type from files;")
+                results = cursor.fetchall()
+                fileid = results[-1][0]
+                self.assertEqual(results[-1][2], 'text/css')
+                self.assertEqual(len(results[-1][1]), 14)
+
+                cursor.execute("""SELECT fileid, print_style, tag
+                                from print_style_recipes;""")
+                results = cursor.fetchall()[-1]
+                self.assertEqual(results[0], fileid)
+                self.assertEqual(results[1], 'name')
+                self.assertEqual(results[2], '1.0')
 
     def test_print_style_history_single_style(self):
         request = testing.DummyRequest()

@@ -25,7 +25,7 @@ def print_style_history(request):
     with psycopg2.connect(db_conn_str) as db_conn:
         with db_conn.cursor() as cursor:
             cursor.execute("""
-            SELECT print_style, baked, recipe, name, sha1
+            SELECT print_style, baked, recipe, name, recipe_tag
             FROM latest_modules
             JOIN files ON latest_modules.recipe=files.fileid
             WHERE portal_type='Collection' AND baked is not null
@@ -38,10 +38,11 @@ def print_style_history(request):
                     'baked': row[1],
                     'recipe': row[2],
                     'name': row[3].decode('utf-8'),
-                    'version': row[4]
+                    'version': row[4],
                 })
-
+    print(styles)
     return {'styles': styles}
+
 
 @view_config(route_name='print-style-history-name', request_method='GET',
              renderer='templates/print-style-history.html')
@@ -49,13 +50,12 @@ def print_style_history_name(request):
     settings = request.registry.settings
     db_conn_str = settings[config.CONNECTION_STRING]
 
-    print("HELLO MADE IT TO THIS FUNCTION")
     name = request.matchdict['name']
     styles = []
     with psycopg2.connect(db_conn_str) as db_conn:
         with db_conn.cursor() as cursor:
             cursor.execute("""
-            SELECT print_style, baked, recipe, name, sha1
+            SELECT print_style, baked, recipe, name, recipe_tag
             FROM latest_modules
             JOIN files ON latest_modules.recipe=files.fileid
             WHERE portal_type='Collection' AND baked is not null
@@ -69,7 +69,7 @@ def print_style_history_name(request):
                     'baked': row[1],
                     'recipe': row[2],
                     'name': row[3].decode('utf-8'),
-                    'version': row[4]
+                    'version': row[4],
                 })
 
     return {'print_style': name,
@@ -94,17 +94,13 @@ def print_style_history_version(request):
                           FROM print_style_recipes
                           WHERE print_style=(%s) AND tag=(%s));
             """, vars=(name, version))
-            recipe = cursor.fetchall()
+            files = cursor.fetchall()
+            print(files)
 
-            print(len(recipe))
-            if len(recipe) != 1:
+            if len(files) != 1:
                 raise httpexceptions.HTTPBadRequest(
                     'style {} with version {} not found'.format(name, version))
-
-            sha1 = recipe[0][0]
-            print(request.route_path('resource', hash=sha1, ignore=""))
+            sha1 = files[0][0]
             raise httpexceptions.HTTPFound(
                 location=request.route_path('resource',
                                             hash=sha1, ignore=""))
-
-    return {'file': file_data}

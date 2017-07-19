@@ -29,7 +29,7 @@ def add_data(self):
             # Insert some data into the association table.
             cursor.execute("""
             UPDATE latest_modules
-            SET baked=%s, recipe=1, recipe_tag='1.0', portal_type='Collection'
+            SET baked=%s, recipe=1, portal_type='Collection'
             WHERE true;
             """, vars=(datetime.today(), ))
             db_conn.commit()
@@ -112,7 +112,7 @@ class PostPublicationsViewsTestCase(unittest.TestCase):
             }]},
             content)
 
-    @unittest.skip("celery is too global, run one at a time")
+    # @unittest.skip("celery is too global, run one at a time")
     def test_print_style_history_single_version(self):
         request = testing.DummyRequest()
 

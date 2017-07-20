@@ -363,4 +363,3 @@ class ContentStatusViewsTestCase(unittest.TestCase):
         content = admin_content_status_single_POST(request)
         self.assertEqual(content['response'],
                          'Book of Infinity is already baking/set to bake')
->>>>>>> a475356... test fix? what is going on with master??

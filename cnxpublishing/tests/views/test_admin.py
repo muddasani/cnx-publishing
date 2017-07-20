@@ -208,7 +208,7 @@ class ContentStatusViewsTestCase(unittest.TestCase):
             'current_ident': 2,
             'current_state': u'PENDING stale_content',
             'states': [
-                {'version': '1.1gi',
+                {'version': '1.1',
                  'recipe': None,
                  'created': content['states'][0]['created'],
                  'state': 'PENDING stale_content',
@@ -221,7 +221,7 @@ class ContentStatusViewsTestCase(unittest.TestCase):
             ]
         }, content)
 
-    # @unittest.skip("celery is too global, run one at a time")
+    @unittest.skip("celery is too global, run one at a time")
     def test_admin_content_status_single_page_POST(self):
         request = testing.DummyRequest()
         from ...views.admin import admin_content_status_single_POST

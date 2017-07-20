@@ -6,6 +6,7 @@
 # See LICENCE.txt for details.
 # ###
 import unittest
+from datetime import datetime
 
 from cnxdb.init import init_db
 from pyramid import testing
@@ -231,3 +232,137 @@ class ContentStatusViewsTestCase(unittest.TestCase):
         content = admin_content_status_single_POST(request)
         self.assertEqual(content['response'],
                          'Book of Infinity is already baking/set to bake')
+
+
+class SiteMessageViewsTestCase(unittest.TestCase):
+    maxDiff = None
+
+    @classmethod
+    def setUpClass(cls):
+        cls.settings = integration_test_settings()
+        from cnxpublishing.config import CONNECTION_STRING
+        cls.db_conn_str = cls.settings[CONNECTION_STRING]
+        cls.db_connect = staticmethod(db_connection_factory())
+
+    def setUp(self):
+        self.config = testing.setUp(settings=self.settings)
+        init_db(self.db_conn_str, True)
+        self.create_post_args = {
+            'message': 'test message',
+            'priority': 1,
+            'type': 1,
+            'start_date': '2017-01-01',
+            'start_time': '00:01',
+            'end_date': '2017-01-02',
+            'end_time': '00:02', }
+
+    def tearDown(self):
+        with self.db_connect() as db_conn:
+            with db_conn.cursor() as cursor:
+                cursor.execute("DROP SCHEMA public CASCADE")
+                cursor.execute("CREATE SCHEMA public")
+        testing.tearDown()
+
+    def test_site_messages_get(self):
+        request = testing.DummyRequest()
+
+        from ...views.admin import admin_add_site_message
+        defaults = admin_add_site_message(request)
+        self.assertEqual(set(defaults.keys()),
+                         set(['start_date', 'start_time',
+                              'end_date', 'end_time', 'banners']))
+
+    def test_site_messages_add_post(self):
+        request = testing.DummyRequest()
+        request.POST = self.create_post_args
+        from ...views.admin import admin_add_site_message_POST
+        results = admin_add_site_message_POST(request)
+
+        # assert the message has been added to the table
+        with self.db_connect() as db_conn:
+            with db_conn.cursor() as cursor:
+                cursor.execute("""SELECT message, priority, starts, ends
+                                  from service_state_messages
+                                  WHERE message='test message';""")
+                result = cursor.fetchone()
+                self.assertEqual('test message', result[0])
+                self.assertEqual(1, result[1])
+                self.assertTrue(datetime.strftime(
+                    result[2], "%Y-%m-%d %H:%M") == '2017-01-01 00:01')
+                self.assertTrue(datetime.strftime(
+                    result[3], "%Y-%m-%d %H:%M") == '2017-01-02 00:02')
+                cursor.execute("""DELETE from service_state_messages
+                                  WHERE message='test message';""")
+
+        # Assert the correct variables were passed to the template
+        self.assertEqual('Message successfully added', results['response'])
+        self.assertEqual(1, len(results['banners']))
+
+    def test_site_messages_delete(self):
+        request = testing.DummyRequest()
+        # first add a banner to delete
+        request.POST = self.create_post_args
+        from ...views.admin import admin_add_site_message_POST
+        results = admin_add_site_message_POST(request)
+
+        request.method = 'DELETE'
+        request.body = 'id=1'
+        from ...views.admin import admin_delete_site_message
+        results = admin_delete_site_message(request)
+        with self.db_connect() as db_conn:
+            with db_conn.cursor() as cursor:
+                cursor.execute("""SELECT * from service_state_messages
+                                  WHERE id=1;""")
+                result = cursor.fetchall()
+                self.assertEqual(0, len(result))
+        self.assertEqual("Message id (1) successfully removed",
+                         results['response'])
+
+    def test_site_messages_edit(self):
+        request = testing.DummyRequest()
+        request = testing.DummyRequest()
+        # first add a banner to delete
+        request.POST = self.create_post_args
+        from ...views.admin import admin_add_site_message_POST
+        results = admin_add_site_message_POST(request)
+
+        request.matchdict['id'] = '1'
+        from ...views.admin import admin_edit_site_message
+        results = admin_edit_site_message(request)
+        self.assertEqual({'message': 'test message',
+                          'danger': 'selected',
+                          'maintenance': 'selected',
+                          'start_date': '2017-01-01',
+                          'start_time': '00:01',
+                          'end_date': '2017-01-02',
+                          'end_time': '00:02',
+                          'id': '1'}, results)
+
+    def test_site_messages_edit_post(self):
+        request = testing.DummyRequest()
+        request = testing.DummyRequest()
+        # first add a banner to delete
+        request.POST = self.create_post_args
+        from ...views.admin import admin_add_site_message_POST
+        results = admin_add_site_message_POST(request)
+
+        request.matchdict['id'] = '1'
+        request.POST = {'message': 'edited message',
+                        'priority': 2,
+                        'type': 2,
+                        'start_date': '2017-01-02',
+                        'start_time': '00:02',
+                        'end_date': '2017-01-03',
+                        'end_time': '00:03',
+                        'id': '1'}
+        from ...views.admin import admin_edit_site_message_POST
+        results = admin_edit_site_message_POST(request)
+        self.assertEqual({'response': 'Message successfully Updated',
+                          'message': 'edited message',
+                          'warning': 'selected',
+                          'notice': 'selected',
+                          'start_date': '2017-01-02',
+                          'start_time': '00:02',
+                          'end_date': '2017-01-03',
+                          'end_time': '00:03',
+                          'id': '1'}, results)

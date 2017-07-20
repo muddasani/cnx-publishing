@@ -532,6 +532,7 @@ def admin_edit_site_message_POST(request):
 
     args = admin_edit_site_message(request)
     args['response'] = "Message successfully Updated"
+    return args
 
 
 def get_baking_statuses_sql(request):

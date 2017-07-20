@@ -61,7 +61,7 @@ def admin_index(request):  # pragma: no cover
              },
             {'name': 'Message Banners',
              'uri': request.route_url('admin-add-site-messages'),
-             }
+             },
             {'name': 'Content Status',
              'uri': request.route_url('admin-content-status'),
              },

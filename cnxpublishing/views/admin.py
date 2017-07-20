@@ -359,6 +359,7 @@ def admin_content_status_single_POST(request):
             args['response'] = title + " set to bake!"
             return args
 
+
 @view_config(route_name='admin-add-site-messages', request_method='GET',
              renderer='cnxpublishing.views:templates/site-messages.html',
              permission='administer')

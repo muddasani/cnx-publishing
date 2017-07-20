@@ -366,3 +366,127 @@ class SiteMessageViewsTestCase(unittest.TestCase):
                           'end_date': '2017-01-03',
                           'end_time': '00:03',
                           'id': '1'}, results)
+
+
+# FIXME There is an issue with setting up the celery app more than once.
+#       Apparently, creating the app a second time doesn't really create
+#       it again. There is some global state hanging around that we can't
+#       easily get at. This causes the task results tables used in these
+#       views to not exist, because the code believes it's already been
+#       initialized.
+# @unittest.skip("celery is too global")
+class ContentStatusViewsTestCase(unittest.TestCase):
+    maxDiff = None
+
+    @classmethod
+    def setUpClass(cls):
+        cls.settings = integration_test_settings()
+        from cnxpublishing.config import CONNECTION_STRING
+        cls.db_conn_str = cls.settings[CONNECTION_STRING]
+        cls.db_connect = staticmethod(db_connection_factory())
+
+    def setUp(self):
+        self.config = testing.setUp(settings=self.settings)
+        self.config.include('cnxpublishing.tasks')
+        init_db(self.db_conn_str, True)
+        add_data(self)
+
+    def tearDown(self):
+        with self.db_connect() as db_conn:
+            with db_conn.cursor() as cursor:
+                cursor.execute("DROP SCHEMA public CASCADE")
+                cursor.execute("CREATE SCHEMA public")
+        testing.tearDown()
+
+    @unittest.skip("celery is too global, run one at a time")
+    def test_admin_content_status_no_filters(self):
+        request = testing.DummyRequest()
+
+        from ...views.admin import admin_content_status
+        content = admin_content_status(request)
+        self.assertEqual({
+            'SUCCESS': 'checked',
+            'PENDING': 'checked',
+            'STARTED': 'checked',
+            'RETRY': 'checked',
+            'FAILURE': 'checked',
+            'start_entry': 0,
+            'page': 1,
+            'num_entries': 100,
+            'sort': 'bpsa.created DESC',
+            'sort_created': 'fa fa-angle-down',
+            'states': content['states']
+        }, content)
+        self.assertEqual(len(content['states']), 2)
+        self.assertEqual(
+            content['states'],
+            sorted(content['states'], key=lambda x: x['created'], reverse=True))
+
+    @unittest.skip("celery is too global, run one at a time")
+    def test_admin_content_status_w_filters(self):
+        request = testing.DummyRequest()
+
+        request.GET = {'page': 1,
+                       'number': 2,
+                       'sort': 'STATE ASC',
+                       'author': 'charrose',
+                       'status_filter': ['FAILURE', 'RETRY', 'PENDING']}
+        from ...views.admin import admin_content_status
+        content = admin_content_status(request)
+        self.assertEqual({
+            'FAILURE': 'checked',
+            'RETRY': 'checked',
+            'PENDING': 'checked',
+            'start_entry': 0,
+            'page': 1,
+            'num_entries': 2,
+            'author': 'charrose',
+            'sort': 'STATE ASC',
+            'sort_state': 'fa fa-angle-up',
+            'states': content['states']
+        }, content)
+        self.assertEqual(len(content['states']), 2)
+        for state in content['states']:
+            self.assertTrue('charrose' in state['authors'])
+            self.assertTrue(state['state'] not in ['STARTED', 'SUCCESS'])
+        self.assertEqual(
+            content['states'],
+            sorted(content['states'], key=lambda x: x['state']))
+
+    @unittest.skip("celery is too global, run one at a time")
+    def test_admin_content_status_single_page(self):
+        request = testing.DummyRequest()
+
+        uuid = 'd5dbbd8e-d137-4f89-9d0a-3ac8db53d8ee'
+        request.matchdict['uuid'] = uuid
+
+        from ...views.admin import admin_content_status_single
+        content = admin_content_status_single(request)
+        print(content)
+        self.assertEqual({
+            'uuid': uuid,
+            'title': 'Book of Infinity',
+            'authors': 'marknewlyn, charrose',
+            'states': [
+                {'version': '1.1',
+                 'recipe': None,
+                 'created': content['states'][0]['created'],
+                 'state': 'PENDING',
+                 'state_message': ''},
+                {'ident_hash': content['states'][1]['ident_hash'],
+                 'created': content['states'][1]['created'],
+                 'state': 'PENDING',
+                 'state_message': ''}
+            ]
+        }, content)
+
+    @unittest.skip("celery is too global, run one at a time")
+    def test_admin_content_status_single_page_POST(self):
+        request = testing.DummyRequest()
+        from ...views.admin import admin_content_status_single_POST
+
+        uuid = 'd5dbbd8e-d137-4f89-9d0a-3ac8db53d8ee'
+        request.matchdict['uuid'] = uuid
+        content = admin_content_status_single_POST(request)
+        self.assertEqual(content['response'],
+                         'Book of Infinity is already baking/set to bake')

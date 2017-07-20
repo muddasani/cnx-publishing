@@ -9,6 +9,7 @@ from __future__ import absolute_import
 
 from re import compile, match
 from datetime import datetime, timedelta
+from re import compile, match
 
 import psycopg2
 from celery.result import AsyncResult
@@ -60,6 +61,9 @@ def admin_index(request):  # pragma: no cover
              },
             {'name': 'Message Banners',
              'uri': request.route_url('admin-add-site-messages'),
+             }
+            {'name': 'Content Status',
+             'uri': request.route_url('admin-content-status'),
              },
             ],
         }
@@ -528,4 +532,150 @@ def admin_edit_site_message_POST(request):
 
     args = admin_edit_site_message(request)
     args['response'] = "Message successfully Updated"
+
+
+def get_baking_statuses_sql(request):
+    args = {}
+    num_entries = request.GET.get('number', 100)
+    page = request.GET.get('page', 1)
+    try:
+        start_entry = (int(page) - 1) * int(num_entries)
+    except ValueError:
+        raise httpexceptions.HTTPBadRequest(
+            'invalid page({}) or entries per page({})'.
+            format(page, num_entries))
+    sort = request.GET.get('sort', 'bpsa.created DESC')
+    if (len(sort.split(" ")) != 2 or
+            sort.split(" ")[0] not in SORTS_DICT.keys() or
+            sort.split(" ")[1] not in ARROW_MATCH.keys()):
+        raise httpexceptions.HTTPBadRequest(
+            'invalid sort: {}'.format(sort))
+    if sort == "STATE ASC" or sort == "STATE DESC":
+        sort = 'bpsa.created DESC'
+    uuid_filter = request.GET.get('uuid', '')
+    author_filter = request.GET.get('author', '')
+
+    sql_filters = "WHERE"
+    if uuid_filter != '':
+        args['uuid'] = uuid_filter
+        sql_filters += " m.uuid=%(uuid)s AND "
+    if author_filter != '':
+        author_filter = author_filter.decode('utf-8')
+        sql_filters += "%(author)s=ANY(m.authors) "
+        args["author"] = author_filter
+
+    if sql_filters.endswith("AND "):
+        sql_filters = sql_filters[:-4]
+    if sql_filters == "WHERE":
+        sql_filters = ""
+
+    statement = """SELECT ident_hash(m.uuid, m.major_version, m.minor_version),
+                       m.name, m.authors, m.uuid,
+                       bpsa.created, bpsa.result_id::text
+                FROM document_baking_result_associations AS bpsa
+                     INNER JOIN modules AS m USING (module_ident)
+                {}
+                ORDER BY {}
+                LIMIT %(num_entries)s OFFSET %(start_entry)s
+                """.format(sql_filters, sort)
+    args.update({'sort': sort,
+                 'start_entry': start_entry,
+                 'num_entries': num_entries,
+                 'page': page})
+    return statement, args
+
+
+@view_config(route_name='admin-content-status', request_method='GET',
+             renderer='cnxpublishing.views:templates/content-status.html',
+             permission='administer')
+def admin_content_status(request):
+    settings = request.registry.settings
+    db_conn_str = settings[config.CONNECTION_STRING]
+    statement, args = get_baking_statuses_sql(request)
+    states = []
+    with psycopg2.connect(db_conn_str) as db_conn:
+        with db_conn.cursor() as cursor:
+            cursor.execute(statement, vars=args)
+            for row in cursor.fetchall():
+                message = ''
+                result_id = row[-1]
+                result = AsyncResult(id=result_id)
+                if result.failed():  # pragma: no cover
+                    message = result.traceback.split("\n")[-2]
+                states.append({
+                    'ident_hash': row[0],
+                    'title': row[1].decode('utf-8'),
+                    'authors': format_autors(row[2]),
+                    'uuid': row[3],
+                    'created': row[4],
+                    'state': result.state,
+                    'state_message': message,
+                })
+    status_filters = request.GET.get('status_filter', [])
+    if status_filters == []:
+        status_filters = ["PENDING", "STARTED", "RETRY", "FAILURE", "SUCCESS"]
+    for f in (status_filters):
+        args[f] = "checked"
+    final_states = []
+    for state in states:
+        if state['state'] in status_filters:
+            final_states.append(state)
+
+    sort = request.GET.get('sort', 'bpsa.created DESC')
+    sort_match = SORTS_DICT[sort.split(' ')[0]]
+    args['sort_' + sort_match] = ARROW_MATCH[sort.split(' ')[1]]
+    args['sort'] = sort
+    if sort == "STATE ASC":
+        final_states = sorted(final_states, key=lambda x: x['state'])
+    if sort == "STATE DESC":
+        final_states = sorted(final_states,
+                              key=lambda x: x['state'], reverse=True)
+
+    args.update({'states': final_states})
     return args
+
+
+@view_config(route_name='admin-content-status-single', request_method='GET',
+             renderer='templates/content-status-single.html',
+             permission='administer')
+def admin_content_status_single(request):
+    uuid = request.matchdict['uuid']
+    pat = ("[0-9a-z]{8}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{12}$")
+    if not compile(pat).match(uuid):
+        raise httpexceptions.HTTPBadRequest(
+            '{} is not a valid uuid'.format(uuid))
+
+    settings = request.registry.settings
+    with psycopg2.connect(settings[config.CONNECTION_STRING]) as db_conn:
+        with db_conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT ident_hash(m.uuid, m.major_version, m.minor_version),
+                    m.uuid, m.name, m.authors,
+                    bpsa.created, bpsa.result_id::text
+                FROM document_baking_result_associations AS bpsa
+                    INNER JOIN modules AS m USING (module_ident)
+                WHERE uuid=%s ORDER BY bpsa.created DESC;
+                    """, vars=(uuid,))
+            modules = cursor.fetchall()
+            if len(modules) == 0:
+                raise httpexceptions.HTTPBadRequest(
+                    '{} is not a book'.format(uuid))
+
+            states = []
+            args = {'uuid': str(row[1]),
+                    'title': row[2].decode('utf-8'),
+                    'authors': format_autors(row[3]), }
+            for row in modules:
+                message = ''
+                result_id = row[-1]
+                result = AsyncResult(id=result_id)
+                if result.failed():  # pragma: no cover
+                    message = result.traceback
+                states.append({
+                    'ident_hash': row[0],
+                    'created': str(row[4]),
+                    'state': result.state,
+                    'state_message': message,
+                })
+            args['states'] = states
+            return args
